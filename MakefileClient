@@ -1,0 +1,2 @@
+all:
+	gcc main_client.c -o t_client -lpthread
