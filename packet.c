@@ -2,6 +2,7 @@
 //#define PacketDeclH
 
 #include <string.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <sys/socket.h> 
 //---------------------------------------------------------------------------
@@ -77,11 +78,27 @@ int SendPacket(int socket,char *buffer,int length)
 void InsertStringValue(unsigned char *body,int *offset, char* Value)
 {
    *(unsigned char *)(body+*offset) = FIELD_TYPE_STRING;
-   *offset++;
+   (*offset)++;
    *(unsigned short *)(body+*offset) = (unsigned short)strlen(Value);
    *offset += sizeof(unsigned short);
    memcpy(body+*offset,Value,strlen(Value));
    *offset += (int)strlen(Value);
+   //printf("*offset = %i\r\n",*offset);
+}
+//---------------------------------------------------------------------------
+int ParseStringValue(unsigned char *body,int *offset,char *Value)
+{
+   if(*(unsigned char *)(body+*offset) != FIELD_TYPE_STRING)
+       return ERROR_BAD_PACKET;
+   (*offset)++;
+   unsigned short length = *(unsigned short *)(body+*offset);
+   (*offset)+=sizeof(unsigned short);
+   char tmpstr[MAX_REPLY_BODY_LENGTH];
+   memcpy(tmpstr,(body+*offset),length);
+   tmpstr[length] = 0;
+   offset += length;
+   strcpy(Value,tmpstr);
+   return SUCCESS;
 }
 //---------------------------------------------------------------------------
 int SendPacketReject(int Socket,char* Error)
@@ -92,9 +109,12 @@ int SendPacketReject(int Socket,char* Error)
 
    int offset = 0;
    InsertStringValue(packet.body,&offset,Error);
+   //printf("offset = %i\r\n",offset);
 
    packet.head.BodyLength = (unsigned short)offset;
    int PacketLength = (int)sizeof(packet.head)+(int)offset;
+   
+    //printf("Packet Error %s BodyLength = %i\r\n",Error,packet.head.BodyLength);
 
    if(SendPacket(Socket,(char *)&packet,PacketLength)!=PacketLength)
        return ERROR_CONNECTION;
@@ -117,6 +137,8 @@ int SendPacketAck(int Socket,char* Message)
        return ERROR_CONNECTION;
    return SUCCESS;
 }
+
+
 
 /*
   Name  : CRC-8

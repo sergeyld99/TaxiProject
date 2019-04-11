@@ -15,6 +15,7 @@
 #include <stdbool.h>
 #include <math.h>
 #include <time.h>
+#include <sys/times.h>
 
 #define _STRUCT_POINT_SOCKET_COUNT   500
 
@@ -22,8 +23,10 @@
 #define _ERROR_SOCKET   -1
 #define _LEN_BUFFER     1024
 
-#define _MAX_COORDINATE_X 1024
-#define _MAX_COORDINATE_Y 1024
+//#define _MAX_COORDINATE_X 1024
+//#define _MAX_COORDINATE_Y 1024
+/*Максимальное удаление от точки 0, 0*/
+#define   _MAX_RADIUS_DISTANCE  1024
 
 #define     _TYPE_QUERY_CARS            1
 #define     _TYPE_QUERY_PASS            2
@@ -59,14 +62,22 @@ bool checkSRCPacket(QUERY_PACKET *packet);
 void clearData();
 //потоковая функция клиента
 void* threadSocket(void* thread_data);
+/*Считывание данных из сокета*/
+int ReceiveBuffer(int socket,void *buffer,int length, int timeoutmsec);
 /*Стартуем серверный сокет*/
 int startServerSocket();
 /*Добавим значение в список*/
-bool addSocketToList(int socket,_STRUCT_POINT_SOCKET *point_s);
+bool addSocketToList(int socket,_STRUCT_POINT_SOCKET *point_s,int x,int y);
 /*Удалим сокет из списка*/
-bool delSocketFromList(int socket);
+bool delSocketFromList(int socket, int typeClient);
 /*Ищем пару клиенту*/
 bool findPairToClient(_STRUCT_POINT_SOCKET *point_s);
+/*Старт таймера*/
+void time_start(struct timeval *tv1, struct timezone *tz);
+/*Стоп таймера (для отсчета таймеров)*/
+long time_stop(struct timeval *tv1, struct timezone *tz);
+/*Ищем расстояние между точками*/
+double getDistance(int x1,int y1,int x2,int y2);
 
 /*Определим массив сокетов водителей*/
 static int countCars = 0; //Счетчик подключенных водителей
@@ -128,6 +139,7 @@ int sendPacketInfoToServer(int socket,int typeClient, int x, int y)
     QUERY_PACKET packet = {head, 0};
     packet.head.crc = 0;
     unsigned char crc = Crc8((unsigned char *)(&packet), sizeof(QUERY_PACKET_HEAD)+head.BodyLength);
+    packet.head.crc = crc;
     int res = SendPacket(socket,(char*)(&packet),sizeof(QUERY_PACKET_HEAD)+head.BodyLength);
     
     return res;
@@ -139,6 +151,7 @@ bool checkSRCPacket(QUERY_PACKET *packet)
     (*packet).head.crc = 0;
     unsigned char crc_count = Crc8((unsigned char *)packet,sizeof(QUERY_PACKET_HEAD) + (*packet).head.BodyLength);
     (*packet).head.crc = crc_recv;
+    //printf("\rcrc_count = %i, crc_recv = %i\r",crc_count,crc_recv);
     return (crc_count == crc_recv);
 }
 //---------------------------------------------------------------------------
@@ -148,14 +161,17 @@ bool checkPair(_STRUCT_POINT_SOCKET *point)
     if (point->socket_pair>0)
     {
         char buffer[200];
-        sprintf(buffer,"Найдена пара %d x=%d, y=%d",point->socket_pair,point->x_pair,point->y_pair);
+        double dist = getDistance(point->x,point->y,point->x_pair,point->y_pair);
+        sprintf(buffer,"Найдена пара %d x=%d, y=%d расстояние %0.3f",point->socket_pair,point->x_pair,point->y_pair,dist);
         SendPacketAck(point->socket,buffer);
+        return true;
     }
     return false;
 }
 //---------------------------------------------------------------------------
 //потоковая функция клиента
-void* threadSocket(void* thread_data){
+void* threadSocket(void* thread_data)
+{
     if (!thread_data)
         return NULL;
     int socket = ((int*)thread_data)[0];
@@ -163,51 +179,33 @@ void* threadSocket(void* thread_data){
     printf("socket=%d\r\n",socket);
     char buffer[_LEN_BUFFER];
     //Таймауты задаем
-    struct timeval tv = {_TIME_OUT_SERVER_SECNDS,0};//
+    //struct timeval tv = {_TIME_OUT_SERVER_SECNDS,0};//
     fd_set rfds;
-    FD_ZERO(&rfds);
-    FD_SET(0, &rfds);
     _STRUCT_POINT_SOCKET *point_s = (_STRUCT_POINT_SOCKET *)malloc(sizeof(_STRUCT_POINT_SOCKET));
     point_s->socket =  socket;
     point_s->typeClient = 0;
     point_s->socket_pair = 0;
     bool isBreak = false;
-    //int n_sec_time_out;
-    //time_t timeNow = time(NULL);
-    //int s_time = 0;
-    while (!isBreak)
+    struct timeval tv1,tv2;
+    struct timezone tz;
+    fd_set readfds;
+    int offset = 0;
+    /*Старт таймера*/
+    time_start(&tv1,&tz);
+    while (!isBreak && time_stop(&tv1,&tz)<=_TIME_OUT_SERVER_SECNDS*1000)
     {
-        int retval = select(socket + 1, &rfds, NULL, NULL, &tv);
-        //double difTime = difftime (time(NULL),timeNow);
-        //printf("difftime=%f\r\n",difTime);
-        //if(retval==0 && s_time++ >_TIME_OUT_SERVER_SECNDS) //Если таймаут
-        //{
-        //}
-        if (checkPair(point_s))
+        int valread = ReceiveBuffer(socket,buffer,sizeof(QUERY_PACKET_HEAD),_TIME_OUT_SERVER_SECNDS);
+        if (valread<0)
         {
-            isBreak = true;
-            continue;
+              printf("\n Error read from socket %d \n",socket);
+              //SendPacketReject(socket,"Error read from socket");
+              isBreak = true;
+              continue;
         }
-        switch(retval)
-        {
-            case -1:                
-                printf("\n Error read from socket %d \n",socket);
-                SendPacketReject(socket,"Error read from socket");
-                isBreak = true;
-                //close(socket);
-                continue;
-            case 0:
-               printf("\n Time out %d second from socket %d \n",_TIME_OUT_SERVER_SECNDS,socket);
-               SendPacketReject(socket,"Error Time out");
-               isBreak = true;
-                //close(socket);
-                continue;
-                //break;
-        }
-        usleep(1000);
-        int valread = read( socket , buffer, sizeof(QUERY_PACKET_HEAD)); 
         if (valread>0)
         {
+            time_start(&tv1,&tz);
+            //printf("\n valread=%i \n",valread);
             //Если считали не весь пакет, считаем еще
             if (valread<sizeof(QUERY_PACKET_HEAD))
             {
@@ -243,15 +241,25 @@ void* threadSocket(void* thread_data){
                     printf("\n Error CRC \n");
                     SendPacketReject(socket,"Error CRC");
                 }
-                else if (head.PacketType!= _TYPE_QUERY_CARS || head.PacketType!= _TYPE_QUERY_PASS || point_s->typeClient>0 && head.PacketType!=point_s->typeClient)
+                else if ((head.PacketType!= _TYPE_QUERY_CARS && head.PacketType!= _TYPE_QUERY_PASS) || point_s->typeClient>0 && head.PacketType!=point_s->typeClient)
                 {
-                    printf("\n Error PacketType \n");
+                    printf("\n Error PacketType %i point_s->typeClient = %i\n",head.PacketType,point_s->typeClient);
                     SendPacketReject(socket,"Error PacketType");
+                }
+                else if (getDistance(0,0,(int)packet.head.x,(int)packet.head.y)>_MAX_RADIUS_DISTANCE)
+                {
+                    printf("\n Error Distance\n");
+                    SendPacketReject(socket,"Error Distance");                    
                 }
                 else
                 {
-                    if (addSocketToList(socket,point_s))
+                    if (point_s->typeClient==0)//значит еще в список не добавлен
+                        point_s->typeClient = head.PacketType;
+                    if (addSocketToList(socket,point_s,head.x,head.y))
+                    {
                         SendPacketAck(socket,"");
+                        findPairToClient(point_s);
+                    }
                     else
                     {
                         printf("\n Error AddPacket \n");
@@ -263,17 +271,18 @@ void* threadSocket(void* thread_data){
             if (checkPair(point_s))
             {   
                 isBreak = true;
+                printf("\n Нашли пару \n");
                 continue;
             }
             //send(socket , "hello" , 5 , 0 ); 
         }
-        sleep(1);
+        usleep(100);
     }
-    delSocketFromList(socket);
+    delSocketFromList(socket,point_s->typeClient);
+    printf("\n Завершили поток \n");
+    //Именно так. Если порядок поменять, то другой сокет законнектится
     shutdown(socket,SHUT_RDWR);
     close(socket);
-    free(point_s);
-    //завершаем поток
     pthread_exit(0);
 }
 
@@ -346,17 +355,17 @@ int startServerSocket()
         return _ERROR_SOCKET;
     }
     
+    printf("Start New Server Socket\r\n");
     while (1)
     {
         listen(listener, 1);    
-        printf("Start New Server Socket\r\n");
         int new_socket = 0;
         if ( 
             (new_socket = accept(listener, (struct sockaddr *)&addr, (socklen_t*)&addrlen))<0
             //(new_socket = accept(listener, NULL,NULL))<0
         ) 
         { 
-            perror("accept error"); 
+            perror("accept error\r\n"); 
             //exit(EXIT_FAILURE); 
         }     
         startThread(new_socket);
@@ -368,11 +377,13 @@ int startServerSocket()
 }
 
 /*Добавим значение в список*/
-bool addSocketToList(int socket,_STRUCT_POINT_SOCKET *point_s)
+bool addSocketToList(int socket,_STRUCT_POINT_SOCKET *point_s,int x,int y)
 {
     pthread_mutex_lock(&mutex_server);
     int index_null = -1;
     bool retValue = false;
+    point_s->x = x;
+    point_s->y = y;
     if (point_s->typeClient==_TYPE_QUERY_CARS)
     {
         for (int i=0;!retValue && i<_STRUCT_POINT_SOCKET_COUNT;i++)
@@ -384,7 +395,11 @@ bool addSocketToList(int socket,_STRUCT_POINT_SOCKET *point_s)
                 continue;
             }
             if(point_socket_car[i]->socket == socket)//Если сокет уже есть, то вернем
+            {
               retValue = true;
+              point_socket_car[i]->x = point_s->x;
+              point_socket_car[i]->y = point_s->y;
+            }
         }
         if (index_null>=0)
         {
@@ -405,7 +420,11 @@ bool addSocketToList(int socket,_STRUCT_POINT_SOCKET *point_s)
                 continue;
             }
             if(point_socket_pass[i]->socket == socket)//Если сокет уже есть, то вернем
+            {
               retValue = true;
+              point_socket_pass[i]->x = point_s->x;
+              point_socket_pass[i]->y = point_s->y;
+            }
         }
         if (index_null>=0)
         {
@@ -414,27 +433,30 @@ bool addSocketToList(int socket,_STRUCT_POINT_SOCKET *point_s)
             countPass++;
         }
     }
+    printf("Сокет %i, x=%i,y=%i\n",socket,point_s->x,point_s->y);
     pthread_mutex_unlock(&mutex_server);
     return retValue;
 }
 
 /*Удалим сокет из списка*/
-bool delSocketFromList(int socket)
+bool delSocketFromList(int socket, int typeClient)
 {
     pthread_mutex_lock(&mutex_server);
     for (int i=0;i<_STRUCT_POINT_SOCKET_COUNT;i++)
     {
-        if(point_socket_car[i] && point_socket_car[i]->socket == socket)
+        if(typeClient==_TYPE_QUERY_CARS && point_socket_car[i] && point_socket_car[i]->socket == socket)
         {
            free(point_socket_car[i]);
            point_socket_car[i] = NULL;
            countCars--;
+           break;
         }
-        if(point_socket_pass[i] && point_socket_pass[i]->socket == socket)
+        if(typeClient ==_TYPE_QUERY_PASS && point_socket_pass[i] && point_socket_pass[i]->socket == socket)
         {
            free(point_socket_pass[i]);
            point_socket_pass[i] = NULL;
            countPass--;
+           break;
         }
     }
     
@@ -445,7 +467,7 @@ bool delSocketFromList(int socket)
 /*Ищем расстояние между точками*/
 double getDistance(int x1,int y1,int x2,int y2)
 {
-    return sqrt(pow((x2-x1),2) + pow((y2-y1),2));
+    return (double)sqrt(pow((x2-x1),2) + pow((y2-y1),2));
 }
 
 /*Ищем пару клиенту*/
@@ -453,15 +475,15 @@ bool findPairToClient(_STRUCT_POINT_SOCKET *point_s)
 {
     _STRUCT_POINT_SOCKET **point_socket = NULL;
     bool retValue = false;
+    pthread_mutex_lock(&mutex_server); //Наиболее жесткий вариант синхронизации
     if (point_s->typeClient==_TYPE_QUERY_CARS)
-        point_socket = point_socket_car;
+        point_socket = point_socket_pass;
     else
     if (point_s->typeClient==_TYPE_QUERY_PASS)
-        point_socket = point_socket_pass;
+        point_socket = point_socket_car;
     double minDist = 0;
     int minIndex = -1;
 
-    pthread_mutex_lock(&mutex_server); //Наиболее жесткий вариант синхронизации
     for (int i=0;point_socket && i<_STRUCT_POINT_SOCKET_COUNT;i++)
     {
         if (!point_socket[i])
@@ -474,7 +496,8 @@ bool findPairToClient(_STRUCT_POINT_SOCKET *point_s)
             minDist = dist0;
         }
     }
-    if (retValue && minIndex>0) //Нашли пару бедолаге
+    printf("findPairToClient retValue = %i, minIndex = %i\n",retValue,minIndex);
+    if (retValue && minIndex>=0) //Нашли пару бедолаге
     {
         point_socket[minIndex]->x_pair = point_s->x;
         point_socket[minIndex]->y_pair = point_s->y;
@@ -489,5 +512,61 @@ bool findPairToClient(_STRUCT_POINT_SOCKET *point_s)
     return retValue;
 }
 
+
+void time_start(struct timeval *tv1, struct timezone *tz) { gettimeofday(tv1, tz); }
+long time_stop(struct timeval *tv1, struct timezone *tz)
+{ 
+  struct timeval dtv;
+  struct timeval tv2;
+  gettimeofday(&tv2, tz);
+  dtv.tv_sec= tv2.tv_sec -tv1->tv_sec;
+  dtv.tv_usec=tv2.tv_usec-tv1->tv_usec;
+  if(dtv.tv_usec<0) { dtv.tv_sec--; dtv.tv_usec+=1000000; }
+  return dtv.tv_sec*1000+dtv.tv_usec/1000;
+}
+
+/*Считывание данных из сокета*/
+int ReceiveBuffer(int Socket,void *buffer,int length, int timeoutmsec)
+{
+  struct timeval tv1;
+  struct timezone tz;
+  fd_set readfds;
+  int offset = 0;
+  time_start(&tv1,&tz);
+  //for(time_t begTimeOfListen=time(NULL);time(NULL)-begTimeOfListen < 5;usleep(100))
+  for(;time_stop(&tv1,&tz) < timeoutmsec;usleep(100))
+  {     
+      //printf("time_out = %d\r\n",(int)time_stop());
+      struct timeval tv = {0,10};
+      FD_ZERO(&readfds);
+      FD_SET((unsigned int)Socket, &readfds);
+      int SelCount = select( Socket + 1, &readfds, NULL , NULL , &tv);
+      if(SelCount == -1)
+      {
+          printf("\n Error Read Socket \n");
+          return -1;
+      }
+      //if(FD_ISSET(Socket, &readfds))
+      if (SelCount>0)
+      {
+          int RecvBytes = read( Socket , (char *)(buffer)+offset, (length-offset)); //recv(Socket,(char *)(buffer)+offset,(length-offset), 0);
+          if(RecvBytes < 0)
+          {
+            printf("\n Error Read Socket \n");
+              return -1;
+          }
+          if(RecvBytes>0)
+          {
+             offset += RecvBytes;
+            //printf("return res = %i\r\n",offset);
+            if(offset == length)
+                return offset;
+          } 
+        usleep(1);
+      };
+  };// end for
+  //printf("return 0\r\n");
+  return 0;
+}
 
 #endif
