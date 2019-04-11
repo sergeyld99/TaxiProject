@@ -13,6 +13,8 @@
 #include <netdb.h>
 #include <sys/time.h>
 #include <stdbool.h>
+#include <math.h>
+#include <time.h>
 
 #define _STRUCT_POINT_SOCKET_COUNT   500
 
@@ -28,21 +30,6 @@
 
 #define     _TIME_OUT_SERVER_SECNDS     10
 
-/*Соединение клиента с сервером*/
-int connectToServerSocket(char *serverAddress, int port);
-/*Клиент посылает информацию о себе*/
-int sendPacketInfoToServer(int socket,int typeClient, int x, int y);
-/*Проверка CRC присланного пакета*/
-bool checkSRCPacket(QUERY_PACKET *packet);
-/*Очистим данные*/
-void clearData();
-//потоковая функция клиента
-void* threadSocket(void* thread_data);
-/*Стартуем серверный сокет*/
-int startServerSocket();
-/*Удалим сокет из списка*/
-bool delSocketFromList(int socket);
-
 
 typedef struct
 {
@@ -56,7 +43,30 @@ typedef struct
      int socket;
      /*Сокет пары*/
      int socket_pair;
+     /*Координата X пары*/
+     int x_pair;
+     /*Координата Y пары*/
+     int y_pair;
 } _STRUCT_POINT_SOCKET;
+
+/*Соединение клиента с сервером*/
+int connectToServerSocket(char *serverAddress, int port);
+/*Клиент посылает информацию о себе*/
+int sendPacketInfoToServer(int socket,int typeClient, int x, int y);
+/*Проверка CRC присланного пакета*/
+bool checkSRCPacket(QUERY_PACKET *packet);
+/*Очистим данные*/
+void clearData();
+//потоковая функция клиента
+void* threadSocket(void* thread_data);
+/*Стартуем серверный сокет*/
+int startServerSocket();
+/*Добавим значение в список*/
+bool addSocketToList(int socket,_STRUCT_POINT_SOCKET *point_s);
+/*Удалим сокет из списка*/
+bool delSocketFromList(int socket);
+/*Ищем пару клиенту*/
+bool findPairToClient(_STRUCT_POINT_SOCKET *point_s);
 
 /*Определим массив сокетов водителей*/
 static int countCars = 0; //Счетчик подключенных водителей
@@ -65,7 +75,7 @@ static _STRUCT_POINT_SOCKET *point_socket_car[_STRUCT_POINT_SOCKET_COUNT];
 static int countPass = 0; //Счетчик подключенных пассажиров
 static _STRUCT_POINT_SOCKET *point_socket_pass[_STRUCT_POINT_SOCKET_COUNT];
 /*Мьютекс*/
-static pthread_mutex_t mutex_server;
+static pthread_mutex_t mutex_server = PTHREAD_MUTEX_INITIALIZER; //Так как мьютекс статичкский- иницмализируем его макросом
 
 /*Соединение клиента с сервером*/
 int connectToServerSocket(char *serverAddress, int port)
@@ -132,7 +142,18 @@ bool checkSRCPacket(QUERY_PACKET *packet)
     return (crc_count == crc_recv);
 }
 //---------------------------------------------------------------------------
-
+/*Проверка клиента на пару*/
+bool checkPair(_STRUCT_POINT_SOCKET *point)
+{
+    if (point->socket_pair>0)
+    {
+        char buffer[200];
+        sprintf(buffer,"Найдена пара %d x=%d, y=%d",point->socket_pair,point->x_pair,point->y_pair);
+        SendPacketAck(point->socket,buffer);
+    }
+    return false;
+}
+//---------------------------------------------------------------------------
 //потоковая функция клиента
 void* threadSocket(void* thread_data){
     if (!thread_data)
@@ -142,17 +163,31 @@ void* threadSocket(void* thread_data){
     printf("socket=%d\r\n",socket);
     char buffer[_LEN_BUFFER];
     //Таймауты задаем
-    struct timeval tv = {_TIME_OUT_SERVER_SECNDS,0};
+    struct timeval tv = {_TIME_OUT_SERVER_SECNDS,0};//
     fd_set rfds;
     FD_ZERO(&rfds);
     FD_SET(0, &rfds);
     _STRUCT_POINT_SOCKET *point_s = (_STRUCT_POINT_SOCKET *)malloc(sizeof(_STRUCT_POINT_SOCKET));
     point_s->socket =  socket;
     point_s->typeClient = 0;
+    point_s->socket_pair = 0;
     bool isBreak = false;
+    //int n_sec_time_out;
+    //time_t timeNow = time(NULL);
+    //int s_time = 0;
     while (!isBreak)
     {
         int retval = select(socket + 1, &rfds, NULL, NULL, &tv);
+        //double difTime = difftime (time(NULL),timeNow);
+        //printf("difftime=%f\r\n",difTime);
+        //if(retval==0 && s_time++ >_TIME_OUT_SERVER_SECNDS) //Если таймаут
+        //{
+        //}
+        if (checkPair(point_s))
+        {
+            isBreak = true;
+            continue;
+        }
         switch(retval)
         {
             case -1:                
@@ -162,11 +197,12 @@ void* threadSocket(void* thread_data){
                 //close(socket);
                 continue;
             case 0:
-                printf("\n Time out %d second from socket %d \n",_TIME_OUT_SERVER_SECNDS,socket);
-                SendPacketReject(socket,"Error Time out");
-                isBreak = true;
+               printf("\n Time out %d second from socket %d \n",_TIME_OUT_SERVER_SECNDS,socket);
+               SendPacketReject(socket,"Error Time out");
+               isBreak = true;
                 //close(socket);
                 continue;
+                //break;
         }
         usleep(1000);
         int valread = read( socket , buffer, sizeof(QUERY_PACKET_HEAD)); 
@@ -184,7 +220,6 @@ void* threadSocket(void* thread_data){
                 SendPacketReject(socket,"Error read packet");
             else
             {
-                SendPacketAck(socket,"");
                 QUERY_PACKET_HEAD head;
                 memcpy(&head,buffer,sizeof(QUERY_PACKET_HEAD));
                 QUERY_PACKET packet; 
@@ -208,13 +243,36 @@ void* threadSocket(void* thread_data){
                     printf("\n Error CRC \n");
                     SendPacketReject(socket,"Error CRC");
                 }
+                else if (head.PacketType!= _TYPE_QUERY_CARS || head.PacketType!= _TYPE_QUERY_PASS || point_s->typeClient>0 && head.PacketType!=point_s->typeClient)
+                {
+                    printf("\n Error PacketType \n");
+                    SendPacketReject(socket,"Error PacketType");
+                }
+                else
+                {
+                    if (addSocketToList(socket,point_s))
+                        SendPacketAck(socket,"");
+                    else
+                    {
+                        printf("\n Error AddPacket \n");
+                        SendPacketReject(socket,"Error AddPacket");
+                    }
+                    
+                }
+            }
+            if (checkPair(point_s))
+            {   
+                isBreak = true;
+                continue;
             }
             //send(socket , "hello" , 5 , 0 ); 
         }
-        delSocketFromList(socket);
-        close(socket);
         sleep(1);
     }
+    delSocketFromList(socket);
+    shutdown(socket,SHUT_RDWR);
+    close(socket);
+    free(point_s);
     //завершаем поток
     pthread_exit(0);
 }
@@ -258,7 +316,9 @@ void clearData()
 /*Стартуем серверный сокет*/
 int startServerSocket()
 {
-   clearData();
+    //Инициализация мьютекса
+    //pthread_mutex_init(&mutex_server, NULL);
+    clearData();
     struct sockaddr_in addr;
     int addrlen = sizeof(addr); 
 
@@ -302,23 +362,60 @@ int startServerSocket()
         startThread(new_socket);
     }
     printf("Server start success on port %i!!!\r\n",port);
-    
+    //Уничтожение мьютекса
+    //pthread_mutex_destroy(&mutex_server);
     return listener;
 }
 
 /*Добавим значение в список*/
-bool addSocketToList(int socket,QUERY_PACKET *packet)
+bool addSocketToList(int socket,_STRUCT_POINT_SOCKET *point_s)
 {
     pthread_mutex_lock(&mutex_server);
-    for (int i=0;i<_STRUCT_POINT_SOCKET_COUNT;i++)
+    int index_null = -1;
+    bool retValue = false;
+    if (point_s->typeClient==_TYPE_QUERY_CARS)
     {
-        //point_socket_car[i] = NULL;
-        //point_socket_pass[i] = NULL;
+        for (int i=0;!retValue && i<_STRUCT_POINT_SOCKET_COUNT;i++)
+        {
+            if (!point_socket_car[i])
+            {
+                if(index_null<0)
+                    index_null = i;
+                continue;
+            }
+            if(point_socket_car[i]->socket == socket)//Если сокет уже есть, то вернем
+              retValue = true;
+        }
+        if (index_null>=0)
+        {
+            retValue = true;
+            point_socket_car[index_null] = point_s;
+            countCars++;
+        }
     }
-    countCars = 0;
-    countPass = 0;
+    else
+    if (point_s->typeClient==_TYPE_QUERY_PASS)
+    {
+        for (int i=0;!retValue && i<_STRUCT_POINT_SOCKET_COUNT;i++)
+        {
+            if (!point_socket_pass[i])
+            {
+                if(index_null<0)
+                    index_null = i;
+                continue;
+            }
+            if(point_socket_pass[i]->socket == socket)//Если сокет уже есть, то вернем
+              retValue = true;
+        }
+        if (index_null>=0)
+        {
+            retValue = true;
+            point_socket_pass[index_null] = point_s;
+            countPass++;
+        }
+    }
     pthread_mutex_unlock(&mutex_server);
-    
+    return retValue;
 }
 
 /*Удалим сокет из списка*/
@@ -345,5 +442,52 @@ bool delSocketFromList(int socket)
     pthread_mutex_unlock(&mutex_server);
     
 }
+/*Ищем расстояние между точками*/
+double getDistance(int x1,int y1,int x2,int y2)
+{
+    return sqrt(pow((x2-x1),2) + pow((y2-y1),2));
+}
+
+/*Ищем пару клиенту*/
+bool findPairToClient(_STRUCT_POINT_SOCKET *point_s)
+{
+    _STRUCT_POINT_SOCKET **point_socket = NULL;
+    bool retValue = false;
+    if (point_s->typeClient==_TYPE_QUERY_CARS)
+        point_socket = point_socket_car;
+    else
+    if (point_s->typeClient==_TYPE_QUERY_PASS)
+        point_socket = point_socket_pass;
+    double minDist = 0;
+    int minIndex = -1;
+
+    pthread_mutex_lock(&mutex_server); //Наиболее жесткий вариант синхронизации
+    for (int i=0;point_socket && i<_STRUCT_POINT_SOCKET_COUNT;i++)
+    {
+        if (!point_socket[i])
+            continue;
+        double dist0 = getDistance(point_socket[i]->x,point_socket[i]->y,point_s->x,point_s->y);
+        if (minIndex<0 || minDist>dist0)
+        {
+            retValue = true;
+            minIndex = i;
+            minDist = dist0;
+        }
+    }
+    if (retValue && minIndex>0) //Нашли пару бедолаге
+    {
+        point_socket[minIndex]->x_pair = point_s->x;
+        point_socket[minIndex]->y_pair = point_s->y;
+        point_socket[minIndex]->socket_pair = point_s->socket;
+
+        point_s->x_pair = point_socket[minIndex]->x;
+        point_s->y_pair = point_socket[minIndex]->y;
+        point_s->socket_pair = point_socket[minIndex]->socket;
+
+    }
+    pthread_mutex_unlock(&mutex_server);
+    return retValue;
+}
+
 
 #endif

@@ -1,2 +1,2 @@
 all:
-	gcc main_client.c -o t_client -lpthread
+	gcc main_client.c -o t_client -lpthread -lm

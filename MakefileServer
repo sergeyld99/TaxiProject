@@ -1,2 +1,2 @@
 all:
-	gcc main.c -o t_server -lpthread
+	gcc main.c -o t_server -lpthread -lm

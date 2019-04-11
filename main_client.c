@@ -44,6 +44,8 @@ void checkParamData()
     }
     
     int res = sendPacketInfoToServer(socketClient,typeClient, x, y);
+    
+    
     printf("Результат посылки пакета  %i\r\n",res);
 }
 
