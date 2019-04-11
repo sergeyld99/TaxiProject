@@ -17,21 +17,22 @@
 #include <time.h>
 #include <sys/times.h>
 
+/*Максимальное количество одновременно подключенных клиентов (одинаково для пассажиров и клиентов)*/
 #define _STRUCT_POINT_SOCKET_COUNT   500
 
+/*Порт сервера*/
 #define _SERVER_PORT    2000
 #define _ERROR_SOCKET   -1
 #define _LEN_BUFFER     1024
 
-//#define _MAX_COORDINATE_X 1024
-//#define _MAX_COORDINATE_Y 1024
-/*Максимальное удаление от точки 0, 0*/
+/*Максимальное удаление от точки 0, 0 (радиус удаления)*/
 #define   _MAX_RADIUS_DISTANCE  1024
 
 #define     _TYPE_QUERY_CARS            1
 #define     _TYPE_QUERY_PASS            2
 
-#define     _TIME_OUT_SERVER_SECNDS     10
+/*Таймаут бездействия клиента в секундах*/
+#define     _TIME_OUT_SERVER_SECONDS     10
 
 
 typedef struct
@@ -179,7 +180,7 @@ void* threadSocket(void* thread_data)
     printf("socket=%d\r\n",socket);
     char buffer[_LEN_BUFFER];
     //Таймауты задаем
-    //struct timeval tv = {_TIME_OUT_SERVER_SECNDS,0};//
+    //struct timeval tv = {_TIME_OUT_SERVER_SECONDS,0};//
     fd_set rfds;
     _STRUCT_POINT_SOCKET *point_s = (_STRUCT_POINT_SOCKET *)malloc(sizeof(_STRUCT_POINT_SOCKET));
     point_s->socket =  socket;
@@ -192,9 +193,9 @@ void* threadSocket(void* thread_data)
     int offset = 0;
     /*Старт таймера*/
     time_start(&tv1,&tz);
-    while (!isBreak && time_stop(&tv1,&tz)<=_TIME_OUT_SERVER_SECNDS*1000)
+    while (!isBreak && time_stop(&tv1,&tz)<=_TIME_OUT_SERVER_SECONDS*1000)
     {
-        int valread = ReceiveBuffer(socket,buffer,sizeof(QUERY_PACKET_HEAD),_TIME_OUT_SERVER_SECNDS);
+        int valread = ReceiveBuffer(socket,buffer,sizeof(QUERY_PACKET_HEAD),_TIME_OUT_SERVER_SECONDS);
         if (valread<0)
         {
               printf("\n Error read from socket %d \n",socket);
