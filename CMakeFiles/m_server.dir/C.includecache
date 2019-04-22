@@ -1,0 +1,54 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/dsl/Downloads/MyPrograms/Тестовые задания/Eltex/Projects/TaxiProject/main.c
+socket.h
+/home/dsl/Downloads/MyPrograms/Тестовые задания/Eltex/Projects/TaxiProject/socket.h
+
+/home/dsl/Downloads/MyPrograms/Тестовые задания/Eltex/Projects/TaxiProject/packet.h
+string.h
+-
+stdio.h
+-
+unistd.h
+-
+sys/socket.h
+-
+
+/home/dsl/Downloads/MyPrograms/Тестовые задания/Eltex/Projects/TaxiProject/socket.h
+packet.h
+/home/dsl/Downloads/MyPrograms/Тестовые задания/Eltex/Projects/TaxiProject/packet.h
+stdio.h
+-
+unistd.h
+-
+sys/socket.h
+-
+stdlib.h
+-
+netinet/in.h
+-
+arpa/inet.h
+-
+string.h
+-
+pthread.h
+-
+netdb.h
+-
+sys/time.h
+-
+stdbool.h
+-
+math.h
+-
+time.h
+-
+sys/times.h
+-
+

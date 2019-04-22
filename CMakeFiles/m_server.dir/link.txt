@@ -1,0 +1,1 @@
+/usr/bin/cc   -rdynamic CMakeFiles/m_server.dir/main.c.o  -o m_server -lpthread libsocket.a libpacket.a -lm -lpthread 

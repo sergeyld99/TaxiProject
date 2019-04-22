@@ -1,0 +1,1 @@
+/usr/bin/cc   -rdynamic CMakeFiles/m_client.dir/main_client.c.o  -o m_client libsocket.a libpacket.a -lm -lpthread 

@@ -1,0 +1,22 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/dsl/Downloads/MyPrograms/Тестовые задания/Eltex/Projects/TaxiProject/packet.c
+packet.h
+/home/dsl/Downloads/MyPrograms/Тестовые задания/Eltex/Projects/TaxiProject/packet.h
+
+/home/dsl/Downloads/MyPrograms/Тестовые задания/Eltex/Projects/TaxiProject/packet.h
+string.h
+-
+stdio.h
+-
+unistd.h
+-
+sys/socket.h
+-
+

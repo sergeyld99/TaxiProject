@@ -1,5 +1,5 @@
 /*Срверный сокет*/
-#include "socket.c"
+#include "socket.h"
 
 
 int main(int argc, char const *argv[]) 

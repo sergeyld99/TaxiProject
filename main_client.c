@@ -1,6 +1,9 @@
 /*Клиентский сокет*/
 //#include "packet.c"
-#include "socket.c"
+#include <getopt.h>
+#include <unistd.h>
+
+#include "socket.h"
 #define try bool __HadError=false;
 #define catch(x) ExitJmp:if(__HadError)
 
@@ -87,10 +90,41 @@ void checkParamData()
 }
 
 
-int main(int argc, char const *argv[]) 
+int main(int argc, char *argv[]) 
 {
     int x = 0;
-    
+    //Начинаем разбор параметров
+    int c;
+    int optIdx;
+    static struct option long_opt[] = {
+                {"help", 0, 0, 'h'},
+                {"type", 1, 0, 'p'},
+                {"x", 1, 0, 'x'},
+                {"y", 1, 0, 'y'},
+                {"server", 1, 0, 's'},
+                {0,0,0,0}
+              };
+    while(true)
+    {
+
+        if((c = getopt_long(argc, argv, "c:h", long_opt, &optIdx)) == -1)
+           break;
+       switch( c )
+        {
+            case 'h':
+               //usage(argv[0]);
+                 return(-1);
+
+             case 'c':
+                 printf("option 'c' selected, filename: %s\n", optarg);
+                 return(1);
+
+             default:
+                 //usage(argv[0]);
+                 return(-1);
+        }
+    }
+
     if (argc<5)
     {
         printHelpInfo((char*)argv[0]);
@@ -105,7 +139,7 @@ int main(int argc, char const *argv[])
     x = atoi(argv[2]);
     y = atoi(argv[3]);
     strcpy(ipAddress,argv[4]);
-    
+
     if (argc>5)
        timeOutMs =  atoi(argv[5]);
     srand ( time(NULL) );
@@ -113,9 +147,8 @@ int main(int argc, char const *argv[])
         step_x = -1;
     if ((rand() % 100)%2 ==0)
         step_y = -1;
-        
+
     checkParamData();
-    
-    
-    return 0;  
+
+    return 0;
 }
