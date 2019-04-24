@@ -137,8 +137,8 @@ clean: CMakeFiles/socket.dir/clean
 # Target rules for target CMakeFiles/m_server.dir
 
 # All Build rule for target.
-CMakeFiles/m_server.dir/all: CMakeFiles/packet.dir/all
 CMakeFiles/m_server.dir/all: CMakeFiles/socket.dir/all
+CMakeFiles/m_server.dir/all: CMakeFiles/packet.dir/all
 	$(MAKE) -f CMakeFiles/m_server.dir/build.make CMakeFiles/m_server.dir/depend
 	$(MAKE) -f CMakeFiles/m_server.dir/build.make CMakeFiles/m_server.dir/build
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir="/home/dsl/Downloads/MyPrograms/Тестовые задания/Eltex/Projects/TaxiProject/CMakeFiles" --progress-num=3,4 "Built target m_server"
@@ -175,8 +175,8 @@ clean: CMakeFiles/m_server.dir/clean
 # Target rules for target CMakeFiles/m_client.dir
 
 # All Build rule for target.
-CMakeFiles/m_client.dir/all: CMakeFiles/packet.dir/all
 CMakeFiles/m_client.dir/all: CMakeFiles/socket.dir/all
+CMakeFiles/m_client.dir/all: CMakeFiles/packet.dir/all
 	$(MAKE) -f CMakeFiles/m_client.dir/build.make CMakeFiles/m_client.dir/depend
 	$(MAKE) -f CMakeFiles/m_client.dir/build.make CMakeFiles/m_client.dir/build
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir="/home/dsl/Downloads/MyPrograms/Тестовые задания/Eltex/Projects/TaxiProject/CMakeFiles" --progress-num=1,2 "Built target m_client"
