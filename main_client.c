@@ -21,11 +21,11 @@ int socketClient = 0;
 void printHelpInfo(char *progName)
 {
     printf("При запуске необходимо указывыть 4 или 5 параметров:\n"
-    "%s < --type (-t)= <p или с> (пассажир или водитель)> \n"
-    "-x=<Координата X> \n"
-    "-y=<Координата Y> \n"
-    "--server(-s)=<IP адрес сервера> \n"
-    "[--timeout(-o)=<Таймаут в миллисикундах (по умолчанию 1000)>]\n"
+    "%s < --type (-t) <p или с> (пассажир или водитель)> \n"
+    "-x <Координата X> \n"
+    "-y <Координата Y> \n"
+    "--server(-s) <IP адрес сервера> \n"
+    "[--timeout(-o) <Таймаут в миллисикундах (по умолчанию 1000)>]\n"
     ,progName
     );
 }
@@ -41,6 +41,16 @@ void checkParamData()
     if (getDistance(0,0,x,y)>_MAX_RADIUS_DISTANCE)
     {
         printf("Точка вне зоны лосягаемости %d\r\n",_MAX_RADIUS_DISTANCE);
+        exit(EXIT_FAILURE);
+    }
+    if (timeOutMs<=0)
+    {
+        printf("Неверное значение таймаута %d\r\n",timeOutMs);
+        exit(EXIT_FAILURE);
+    }
+    if (strcmp(ipAddress,"")==0)
+    {
+        printf("Не задан адрес сервера\r\n");
         exit(EXIT_FAILURE);
     }
     socketClient = connectToServerSocket(ipAddress, _SERVER_PORT);
@@ -79,7 +89,7 @@ void checkParamData()
             r_packet.body[lenRead] = 0;
             int offset = 0;
             ParseStringValue(r_packet.body,&offset,buffer);
-            
+
             if (r_packet.head.PacketType == ACK)
                 printf("Packet OK %s i=%i x=%i y=%i\r\n",buffer,i,x,y);
             else
@@ -101,6 +111,7 @@ int main(int argc, char *argv[])
     int c;
     int optIdx;
     int flag_help = 0;
+    strcpy(ipAddress,"");
     static struct option long_opt[] = {
                 {"help", 0, 0, 'h'},
                 {"type", 1, 0, 't'},
@@ -115,12 +126,13 @@ int main(int argc, char *argv[])
 
         if((c = getopt_long(argc, argv, "ht:x:y:o:s:", long_opt, &optIdx)) == -1)
            break;
+       //printf("paramname=%c paramvalue=%s\n",c,optarg);
        switch( c )
         {
             case 'h':
                //usage(argv[0]);
                  printHelpInfo((char*)argv[0]);
-                 return(-1);
+                 //return(-1);
              case 's':
                  strcpy(ipAddress,optarg);
                  printf("option 's' servername: %s\n", ipAddress);

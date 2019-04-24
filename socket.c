@@ -62,7 +62,7 @@ int sendPacketInfoToServer(int socket,int typeClient, int x, int y)
     unsigned char crc = Crc8((unsigned char *)(&packet), sizeof(QUERY_PACKET_HEAD)+head.BodyLength);
     packet.head.crc = crc;
     int res = SendPacket(socket,(char*)(&packet),sizeof(QUERY_PACKET_HEAD)+head.BodyLength);
-    
+
     return res;
 }
 //---------------------------------------------------------------------------
@@ -90,18 +90,104 @@ bool checkPair(_STRUCT_POINT_SOCKET *point)
     return false;
 }
 //---------------------------------------------------------------------------
+int readPacketFromServer(int socket, _STRUCT_POINT_SOCKET *point_s)
+{
+    char buffer[_LEN_BUFFER];
+
+    int valread = ReceiveBuffer(socket,buffer,sizeof(QUERY_PACKET_HEAD),_TIME_OUT_SERVER_SECONDS);
+    if (valread<0)
+    {
+          printf("\n Error read from socket %d \n",socket);
+          //SendPacketReject(socket,"Error read from socket");
+          //isBreak = true;
+          //continue;
+          return _IS_BREAK_FROM_CYCLE_STATUS;
+    }
+    if (valread>0)
+    {
+        
+        //printf("\n valread=%i \n",valread);
+        //Если считали не весь пакет, считаем еще
+        if (valread<sizeof(QUERY_PACKET_HEAD))
+        {
+            usleep(10*1000);
+            int len = ReceiveBuffer(socket,&buffer[valread],sizeof(QUERY_PACKET_HEAD),_TIME_OUT_SERVER_SECONDS);//read( socket , &buffer[valread], sizeof(QUERY_PACKET_HEAD) - valread); 
+            if (len>0) valread += len;
+        }
+        //printf("buffer=%s\r\n",buffer);
+        if (valread<sizeof(QUERY_PACKET_HEAD))
+        {
+            SendPacketReject(socket,"Error read packet");
+            return -1;
+        }
+        else
+        {
+            QUERY_PACKET_HEAD head;
+            memcpy(&head,buffer,sizeof(QUERY_PACKET_HEAD));
+            QUERY_PACKET packet; 
+            packet.head = head;
+            //считаем тело
+            if (head.BodyLength>MAX_QUERY_BODY_LENGTH)
+            {
+                printf("\n Error read Body \n");
+                SendPacketReject(socket,"Error read Body");
+                return -1;
+            }
+            if (head.BodyLength>0)
+            {
+                int len = read( socket , packet.body, head.BodyLength);
+                if (len>0 && len<MAX_QUERY_BODY_LENGTH)
+                    packet.body[len] = 0;
+            }
+            //packet.body = body;
+            if (!checkSRCPacket(&packet))
+            {
+                printf("\n Error CRC \n");
+                SendPacketReject(socket,"Error CRC");
+            }
+            else if ((head.PacketType!= _TYPE_QUERY_CARS && head.PacketType!= _TYPE_QUERY_PASS) || point_s->typeClient>0 && head.PacketType!=point_s->typeClient)
+            {
+                printf("\n Error PacketType %i point_s->typeClient = %i\n",head.PacketType,point_s->typeClient);
+                SendPacketReject(socket,"Error PacketType");
+            }
+            else if (getDistance(0,0,(int)packet.head.x,(int)packet.head.y)>_MAX_RADIUS_DISTANCE)
+            {
+                printf("\n Error Distance\n");
+                SendPacketReject(socket,"Error Distance");
+            }
+            else
+            {
+                if (point_s->typeClient==0)//значит еще в список не добавлен
+                    point_s->typeClient = head.PacketType;
+                if (addSocketToList(socket,point_s,head.x,head.y))
+                {
+                    SendPacketAck(socket,"");
+                    findPairToClient(point_s);
+                    return valread;
+                }
+                else
+                {
+                    printf("\n Error AddPacket \n");
+                    SendPacketReject(socket,"Error AddPacket");
+                    //return -1;
+                }
+
+            }
+        }
+        //send(socket , "hello" , 5 , 0 ); 
+    }
+
+    return 0;
+}
+//---------------------------------------------------------------------------
 //потоковая функция клиента
 void* threadSocket(void* thread_data)
 {
     if (!thread_data)
         return NULL;
-    int socket = ((int*)thread_data)[0];
-    free(thread_data);
+    int socket = *((int*)thread_data);//((int*)thread_data)[0];
+    //free(thread_data);
     printf("socket=%d\r\n",socket);
-    char buffer[_LEN_BUFFER];
-    //Таймауты задаем
-    //struct timeval tv = {_TIME_OUT_SERVER_SECONDS,0};//
-    fd_set rfds;
     _STRUCT_POINT_SOCKET *point_s = (_STRUCT_POINT_SOCKET *)malloc(sizeof(_STRUCT_POINT_SOCKET));
     point_s->socket =  socket;
     point_s->typeClient = 0;
@@ -115,87 +201,21 @@ void* threadSocket(void* thread_data)
     time_start(&tv1,&tz);
     while (!isBreak && time_stop(&tv1,&tz)<=_TIME_OUT_SERVER_SECONDS*1000)
     {
-        int valread = ReceiveBuffer(socket,buffer,sizeof(QUERY_PACKET_HEAD),_TIME_OUT_SERVER_SECONDS);
-        if (valread<0)
+        int res_read = readPacketFromServer(socket, point_s);
+        if (res_read ==_IS_BREAK_FROM_CYCLE_STATUS)
         {
-              printf("\n Error read from socket %d \n",socket);
-              //SendPacketReject(socket,"Error read from socket");
-              isBreak = true;
-              continue;
+            isBreak = true;
+            //printf("\n Нашли пару \n");
+            continue;
         }
-        if (valread>0)
+        //Если считали какие-то данные то обнулим таймер
+        if (res_read>0)
+           time_start(&tv1,&tz);
+        if (checkPair(point_s))
         {
-            time_start(&tv1,&tz);
-            //printf("\n valread=%i \n",valread);
-            //Если считали не весь пакет, считаем еще
-            if (valread<sizeof(QUERY_PACKET_HEAD))
-            {
-                usleep(10*1000);
-                int len = read( socket , &buffer[valread], sizeof(QUERY_PACKET_HEAD) - valread); 
-                if (len>0) valread += len;
-            }
-            //printf("buffer=%s\r\n",buffer);
-            if (valread<sizeof(QUERY_PACKET_HEAD))
-                SendPacketReject(socket,"Error read packet");
-            else
-            {
-                QUERY_PACKET_HEAD head;
-                memcpy(&head,buffer,sizeof(QUERY_PACKET_HEAD));
-                QUERY_PACKET packet; 
-                packet.head = head;
-                //считаем тело
-                if (head.BodyLength>MAX_QUERY_BODY_LENGTH)
-                {
-                    printf("\n Error read Body \n");
-                    SendPacketReject(socket,"Error read Body");
-                    continue;
-                }
-                if (head.BodyLength>0)
-                {                    
-                    int len = read( socket , packet.body, head.BodyLength);
-                    if (len>0 && len<MAX_QUERY_BODY_LENGTH)
-                        packet.body[len] = 0;
-                }
-                //packet.body = body;
-                if (!checkSRCPacket(&packet))
-                {
-                    printf("\n Error CRC \n");
-                    SendPacketReject(socket,"Error CRC");
-                }
-                else if ((head.PacketType!= _TYPE_QUERY_CARS && head.PacketType!= _TYPE_QUERY_PASS) || point_s->typeClient>0 && head.PacketType!=point_s->typeClient)
-                {
-                    printf("\n Error PacketType %i point_s->typeClient = %i\n",head.PacketType,point_s->typeClient);
-                    SendPacketReject(socket,"Error PacketType");
-                }
-                else if (getDistance(0,0,(int)packet.head.x,(int)packet.head.y)>_MAX_RADIUS_DISTANCE)
-                {
-                    printf("\n Error Distance\n");
-                    SendPacketReject(socket,"Error Distance");                    
-                }
-                else
-                {
-                    if (point_s->typeClient==0)//значит еще в список не добавлен
-                        point_s->typeClient = head.PacketType;
-                    if (addSocketToList(socket,point_s,head.x,head.y))
-                    {
-                        SendPacketAck(socket,"");
-                        findPairToClient(point_s);
-                    }
-                    else
-                    {
-                        printf("\n Error AddPacket \n");
-                        SendPacketReject(socket,"Error AddPacket");
-                    }
-                    
-                }
-            }
-            if (checkPair(point_s))
-            {   
-                isBreak = true;
-                printf("\n Нашли пару \n");
-                continue;
-            }
-            //send(socket , "hello" , 5 , 0 ); 
+            isBreak = true;
+            printf("\n Нашли пару \n");
+            continue;
         }
         usleep(100);
     }
@@ -212,15 +232,15 @@ void* threadSocket(void* thread_data)
 int startThread(int socket)
 {
     
-    //данные для потока (для примера)
-    void* thread_data = (int*)malloc(sizeof(int));
-    ((int*)thread_data)[0] = socket;                                                                            
+    //данные для потока
+    //void* thread_data = (int*)malloc(sizeof(int));
+    //((int*)thread_data)[0] = socket;
     //создаем идентификатор потока
-    pthread_t thread;                                                            
-                                                                                
+    pthread_t thread;
+
     //создаем поток по идентификатору thread и функции потока threadSocket
     //и передаем потоку указатель на данные thread_data
-    pthread_create(&thread, NULL, threadSocket, thread_data);
+    pthread_create(&thread, NULL, threadSocket, &socket);
 
     //ждем завершения потока
     //pthread_join(thread, NULL);
@@ -265,7 +285,7 @@ int startServerSocket()
            perror("setsockopt(SO_REUSEADDR) failed");
            return _ERROR_SOCKET;
     }
-    
+
     int port = _SERVER_PORT;
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
@@ -275,7 +295,7 @@ int startServerSocket()
         printf("bind error\r\n");
         return _ERROR_SOCKET;
     }
-    
+
     printf("Start New Server Socket\r\n");
     while (1)
     {
@@ -284,11 +304,11 @@ int startServerSocket()
         if ( 
             (new_socket = accept(listener, (struct sockaddr *)&addr, (socklen_t*)&addrlen))<0
             //(new_socket = accept(listener, NULL,NULL))<0
-        ) 
-        { 
+        )
+        {
             perror("accept error\r\n"); 
             //exit(EXIT_FAILURE); 
-        }     
+        }
         startThread(new_socket);
     }
     printf("Server start success on port %i!!!\r\n",port);
@@ -456,7 +476,7 @@ int ReceiveBuffer(int Socket,void *buffer,int length, int timeoutmsec)
   time_start(&tv1,&tz);
   //for(time_t begTimeOfListen=time(NULL);time(NULL)-begTimeOfListen < 5;usleep(100))
   for(;time_stop(&tv1,&tz) < timeoutmsec;usleep(100))
-  {     
+  {
       //printf("time_out = %d\r\n",(int)time_stop());
       struct timeval tv = {0,10};
       FD_ZERO(&readfds);
