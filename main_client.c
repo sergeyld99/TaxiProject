@@ -20,9 +20,13 @@ int socketClient = 0;
 /*Печатаем сообщение при неудачном запуске*/
 void printHelpInfo(char *progName)
 {
-    printf("При запуске необходимо указывыть 4 или 5 параметров: \r\n\
-    %s <p или с (пассажир или водитель)> <Координата X> <Координата Y> <IP адрес сервера> [<Таймаут в миллисикундах (по умолчанию 1000)>]\r\n"
-    ,progName    
+    printf("При запуске необходимо указывыть 4 или 5 параметров:\n"
+    "%s < --type (-t)= <p или с> (пассажир или водитель)> \n"
+    "-x=<Координата X> \n"
+    "-y=<Координата Y> \n"
+    "--server(-s)=<IP адрес сервера> \n"
+    "[--timeout(-o)=<Таймаут в миллисикундах (по умолчанию 1000)>]\n"
+    ,progName
     );
 }
 
@@ -31,7 +35,7 @@ void checkParamData()
 {
     if (typeClient!=_TYPE_QUERY_PASS && typeClient!=_TYPE_QUERY_CARS)
     {
-        printf("Первый параметр должен быть p или с (пассажир или водитель)\r\n");
+        printf("Не задан тип клиента (пассажир или водитель)\r\n");
         exit(EXIT_FAILURE);
     }
     if (getDistance(0,0,x,y)>_MAX_RADIUS_DISTANCE)
@@ -45,7 +49,7 @@ void checkParamData()
         printf("Невозможно соединится с сервером %s\r\n",ipAddress);
         exit(EXIT_FAILURE);
     }
-    
+
     int res =0;
     //usleep(1000 * 10);
     //for (int i=0;i<20;i++)
@@ -96,52 +100,55 @@ int main(int argc, char *argv[])
     //Начинаем разбор параметров
     int c;
     int optIdx;
+    int flag_help = 0;
     static struct option long_opt[] = {
                 {"help", 0, 0, 'h'},
-                {"type", 1, 0, 'p'},
+                {"type", 1, 0, 't'},
                 {"x", 1, 0, 'x'},
                 {"y", 1, 0, 'y'},
                 {"server", 1, 0, 's'},
+                {"out", 1, 0, 'o'},
                 {0,0,0,0}
               };
     while(true)
     {
 
-        if((c = getopt_long(argc, argv, "c:h", long_opt, &optIdx)) == -1)
+        if((c = getopt_long(argc, argv, "ht:x:y:o:s:", long_opt, &optIdx)) == -1)
            break;
        switch( c )
         {
             case 'h':
                //usage(argv[0]);
+                 printHelpInfo((char*)argv[0]);
                  return(-1);
-
-             case 'c':
-                 printf("option 'c' selected, filename: %s\n", optarg);
-                 return(1);
-
+             case 's':
+                 strcpy(ipAddress,optarg);
+                 printf("option 's' servername: %s\n", ipAddress);
+                 break;
+             case 'x':
+                x = atoi(optarg);
+                break;
+             case 'y':
+                y = atoi(optarg);
+                break;
+             case 't':
+                if(strcmp(optarg,"p")==0)
+                   typeClient =  _TYPE_QUERY_PASS;
+                else
+                if(strcmp(optarg,"c")==0)
+                   typeClient =  _TYPE_QUERY_CARS;
+                break;
+             case 'o':
+                timeOutMs = atoi(optarg);
+                break;
              default:
                  //usage(argv[0]);
+                 printf("Invalid argument %c\n",c);
                  return(-1);
         }
     }
 
-    if (argc<5)
-    {
-        printHelpInfo((char*)argv[0]);
-        return -1;
-    }
-    typeClient = 0;
-    if (strcmp(argv[1],"p") == 0 || strcmp(argv[1],"P") == 0)
-        typeClient =  _TYPE_QUERY_PASS;
-    else
-    if (strcmp(argv[1],"c") == 0 || strcmp(argv[1],"C") == 0)
-        typeClient =  _TYPE_QUERY_CARS;
-    x = atoi(argv[2]);
-    y = atoi(argv[3]);
-    strcpy(ipAddress,argv[4]);
 
-    if (argc>5)
-       timeOutMs =  atoi(argv[5]);
     srand ( time(NULL) );
     if ((rand() % 100)%2 ==0)
         step_x = -1;
