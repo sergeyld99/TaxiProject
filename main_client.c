@@ -89,8 +89,8 @@ void checkParamData()
         y = y+step_y;
         usleep(timeOutMs * 1000);
     }
-    
-    
+
+
 }
 
 
