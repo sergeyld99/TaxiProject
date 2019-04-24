@@ -72,7 +72,8 @@ int startServerSocket();
 /*Добавим значение в список*/
 bool addSocketToList(int socket,_STRUCT_POINT_SOCKET *point_s,int x,int y);
 /*Удалим сокет из списка*/
-bool delSocketFromList(int socket, int typeClient);
+bool delSocketFromList(_STRUCT_POINT_SOCKET *point_s);
+//bool delSocketFromList(int socket, int typeClient);
 /*Ищем пару клиенту*/
 bool findPairToClient(_STRUCT_POINT_SOCKET *point_s);
 /*Старт таймера*/

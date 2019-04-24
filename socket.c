@@ -83,7 +83,10 @@ bool checkPair(_STRUCT_POINT_SOCKET *point)
     {
         char buffer[200];
         double dist = getDistance(point->x,point->y,point->x_pair,point->y_pair);
-        sprintf(buffer,"Найдена пара %d x=%d, y=%d расстояние %0.3f",point->socket_pair,point->x_pair,point->y_pair,dist);
+        sprintf(buffer,"Вашей точке %d (%d,%d) Найдена пара %d (%d,%d) расстояние %0.3f"
+                ,point->socket,point->x,point->y
+                ,point->socket_pair,point->x_pair,point->y_pair
+                ,dist);
         SendPacketAck(point->socket,buffer);
         return true;
     }
@@ -200,6 +203,7 @@ void* threadSocket(void* thread_data)
     while (!isBreak && time_stop(&tv1,&tz)<=_TIME_OUT_SERVER_SECONDS*1000)
     {
         int res_read = readPacketFromServer(socket, point_s);
+        //Если вернется такое значение - прервем цикл аварийно
         if (res_read ==_IS_BREAK_FROM_CYCLE_STATUS)
         {
             isBreak = true;
@@ -209,6 +213,7 @@ void* threadSocket(void* thread_data)
         //Если считали какие-то данные то обнулим таймер
         if (res_read>0)
            time_start(&tv1,&tz);
+        //Проверка пары. Если нашли- завершим аварийно
         if (checkPair(point_s))
         {
             isBreak = true;
@@ -218,7 +223,8 @@ void* threadSocket(void* thread_data)
         usleep(100);
     }
     //Удаляем сокет из списка
-    delSocketFromList(socket,point_s->typeClient);
+    delSocketFromList(point_s);
+    //delSocketFromList(socket,point_s->typeClient);
     printf("\n Завершили поток \n");
     //Закроем сокет
     //Именно так. Если порядок поменять, то другой сокет законнектится
@@ -321,13 +327,12 @@ int startServerSocket()
 bool addSocketToList(int socket,_STRUCT_POINT_SOCKET *point_s,int x,int y)
 {
     pthread_mutex_lock(&mutex_server);
-    int index_null = -1;
     bool retValue = false;
     point_s->x = x;
     point_s->y = y;
-    if (point_s->typeClient==_TYPE_QUERY_CARS)
-    {
-        for (int i=0;!retValue && i<_STRUCT_POINT_SOCKET_COUNT;i++)
+    
+        int index_null = -1;
+        for (int i=0;point_s->typeClient==_TYPE_QUERY_CARS && !retValue && i<_STRUCT_POINT_SOCKET_COUNT;i++)
         {
             if (!point_socket_car[i])
             {
@@ -335,24 +340,23 @@ bool addSocketToList(int socket,_STRUCT_POINT_SOCKET *point_s,int x,int y)
                     index_null = i;
                 continue;
             }
-            if(point_socket_car[i]->socket == socket)//Если сокет уже есть, то вернем
+            if(point_socket_car[i] == point_s)//Если сокет уже есть, то вернем
             {
               retValue = true;
               point_socket_car[i]->x = point_s->x;
               point_socket_car[i]->y = point_s->y;
             }
         }
-        if (index_null>=0)
+        //Если ничего не нашли и есть пустой элемент, присвоим его
+        if (!retValue && index_null>=0)
         {
             retValue = true;
             point_socket_car[index_null] = point_s;
             countCars++;
         }
-    }
-    else
-    if (point_s->typeClient==_TYPE_QUERY_PASS)
-    {
-        for (int i=0;!retValue && i<_STRUCT_POINT_SOCKET_COUNT;i++)
+
+        index_null = -1;
+        for (int i=0;point_s->typeClient==_TYPE_QUERY_PASS && !retValue && i<_STRUCT_POINT_SOCKET_COUNT;i++)
         {
             if (!point_socket_pass[i])
             {
@@ -360,39 +364,40 @@ bool addSocketToList(int socket,_STRUCT_POINT_SOCKET *point_s,int x,int y)
                     index_null = i;
                 continue;
             }
-            if(point_socket_pass[i]->socket == socket)//Если сокет уже есть, то вернем
+            if(point_socket_pass[i] == point_s)//Если сокет уже есть, то вернем
             {
               retValue = true;
               point_socket_pass[i]->x = point_s->x;
               point_socket_pass[i]->y = point_s->y;
             }
         }
-        if (index_null>=0)
+        //Если ничего не нашли и есть пустой элемент, присвоим его
+        if (!retValue && index_null>=0)
         {
             retValue = true;
             point_socket_pass[index_null] = point_s;
             countPass++;
         }
-    }
+
     printf("Сокет %i, x=%i,y=%i\n",socket,point_s->x,point_s->y);
     pthread_mutex_unlock(&mutex_server);
     return retValue;
 }
 
 /*Удалим сокет из списка*/
-bool delSocketFromList(int socket, int typeClient)
+bool delSocketFromList(_STRUCT_POINT_SOCKET *point_s)
 {
     pthread_mutex_lock(&mutex_server);
     for (int i=0;i<_STRUCT_POINT_SOCKET_COUNT;i++)
     {
-        if(typeClient==_TYPE_QUERY_CARS && point_socket_car[i] && point_socket_car[i]->socket == socket)
+        if(point_s->typeClient == _TYPE_QUERY_CARS && point_socket_car[i] == point_s)
         {
            free(point_socket_car[i]);
            point_socket_car[i] = NULL;
            countCars--;
            break;
         }
-        if(typeClient ==_TYPE_QUERY_PASS && point_socket_pass[i] && point_socket_pass[i]->socket == socket)
+        if(point_s->typeClient ==_TYPE_QUERY_PASS && point_socket_pass[i] == point_s)
         {
            free(point_socket_pass[i]);
            point_socket_pass[i] = NULL;
@@ -400,8 +405,6 @@ bool delSocketFromList(int socket, int typeClient)
            break;
         }
     }
-
-
     pthread_mutex_unlock(&mutex_server);
 
 }
