@@ -36,15 +36,15 @@ int connectToServerSocket(char *serverAddress, int port)
         }
         serv_addr.sin_addr = *((struct in_addr *)host_struct->h_addr);
     }
-    
-    
+
+
 
     if( connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)    
     {
         printf("\n Error : Connect Failed \n");
         return -2;
     }
-    
+
     return sockfd;
 }
 
@@ -105,7 +105,7 @@ int readPacketFromServer(int socket, _STRUCT_POINT_SOCKET *point_s)
     }
     if (valread>0)
     {
-        
+
         //printf("\n valread=%i \n",valread);
         //Если считали не весь пакет, считаем еще
         if (valread<sizeof(QUERY_PACKET_HEAD))
@@ -185,9 +185,9 @@ void* threadSocket(void* thread_data)
 {
     if (!thread_data)
         return NULL;
-    int socket = *((int*)thread_data);//((int*)thread_data)[0];
-    //free(thread_data);
-    printf("socket=%d\r\n",socket);
+    //Присаоим сокет из основного потока сервера локальной переменной
+    int socket = *((int*)thread_data);
+    //Выделяем память под структуру данных клиента
     _STRUCT_POINT_SOCKET *point_s = (_STRUCT_POINT_SOCKET *)malloc(sizeof(_STRUCT_POINT_SOCKET));
     point_s->socket =  socket;
     point_s->typeClient = 0;
@@ -195,8 +195,6 @@ void* threadSocket(void* thread_data)
     bool isBreak = false;
     struct timeval tv1,tv2;
     struct timezone tz;
-    fd_set readfds;
-    int offset = 0;
     /*Старт таймера*/
     time_start(&tv1,&tz);
     while (!isBreak && time_stop(&tv1,&tz)<=_TIME_OUT_SERVER_SECONDS*1000)
@@ -219,8 +217,10 @@ void* threadSocket(void* thread_data)
         }
         usleep(100);
     }
+    //Удаляем сокет из списка
     delSocketFromList(socket,point_s->typeClient);
     printf("\n Завершили поток \n");
+    //Закроем сокет
     //Именно так. Если порядок поменять, то другой сокет законнектится
     shutdown(socket,SHUT_RDWR);
     close(socket);
@@ -299,7 +299,7 @@ int startServerSocket()
     printf("Start New Server Socket\r\n");
     while (1)
     {
-        listen(listener, 1);    
+        listen(listener, 1);
         int new_socket = 0;
         if ( 
             (new_socket = accept(listener, (struct sockaddr *)&addr, (socklen_t*)&addrlen))<0
@@ -400,10 +400,10 @@ bool delSocketFromList(int socket, int typeClient)
            break;
         }
     }
-    
-    
+
+
     pthread_mutex_unlock(&mutex_server);
-    
+
 }
 /*Ищем расстояние между точками*/
 double getDistance(int x1,int y1,int x2,int y2)
@@ -466,7 +466,7 @@ long time_stop(struct timeval *tv1, struct timezone *tz)
   return dtv.tv_sec*1000+dtv.tv_usec/1000;
 }
 
-/*Считывание данных из сокета*/
+/*Считывание данных из сокета с таймаутом*/
 int ReceiveBuffer(int Socket,void *buffer,int length, int timeoutmsec)
 {
   struct timeval tv1;
@@ -474,7 +474,6 @@ int ReceiveBuffer(int Socket,void *buffer,int length, int timeoutmsec)
   fd_set readfds;
   int offset = 0;
   time_start(&tv1,&tz);
-  //for(time_t begTimeOfListen=time(NULL);time(NULL)-begTimeOfListen < 5;usleep(100))
   for(;time_stop(&tv1,&tz) < timeoutmsec;usleep(100))
   {
       //printf("time_out = %d\r\n",(int)time_stop());

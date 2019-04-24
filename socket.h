@@ -34,7 +34,9 @@
 /*Таймаут бездействия клиента в секундах*/
 #define     _TIME_OUT_SERVER_SECONDS     10
 
+#define    _IS_BREAK_FROM_CYCLE_STATUS   -100000
 
+//структура для клиента подключенного к сераеру
 typedef struct
 {
     /*Тип клиента*/
@@ -79,7 +81,7 @@ void time_start(struct timeval *tv1, struct timezone *tz);
 long time_stop(struct timeval *tv1, struct timezone *tz);
 /*Ищем расстояние между точками*/
 double getDistance(int x1,int y1,int x2,int y2);
-
-
+/*Читаем пакет из сокета, и если прочитали, то меняем информацию о точке*/
+int readPacketFromServer(int socket, _STRUCT_POINT_SOCKET *point_s);
 
 #endif
