@@ -132,7 +132,7 @@ int main(int argc, char *argv[])
             case 'h':
                //usage(argv[0]);
                  printHelpInfo((char*)argv[0]);
-                 //return(-1);
+                 return(-1);
              case 's':
                  strcpy(ipAddress,optarg);
                  printf("option 's' servername: %s\n", ipAddress);
